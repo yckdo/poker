@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tournoi 6-max – Ranges Préflop</title>
+  <style>
+    :root {
+      --bg:#e8f2ff;
+      --panel:#f9fbff;
+      --text:#0f172a;
+      --brand:#2563eb;
+      --brand2:#1d4ed8;
+    }
+    body {margin:0;font-family:Inter,ui-sans-serif,system-ui;background:var(--bg);color:var(--text);}
+    .wrap {max-width:1600px;margin:40px auto;padding:16px 5vw;}
+    header {display:flex;flex-direction:column;align-items:center;margin-bottom:20px;text-align:center}
+    .title {font-weight:800;font-size:clamp(22px,3vw,32px);color:var(--brand2);text-align:center}
+    .subtitle {color:#1e3a8a;font-size:14px;margin-bottom:10px;text-align:center}
+    .legend {display:flex;gap:10px;align-items:center;justify-content:center;margin-bottom:20px;flex-wrap:wrap}
+    .legend-item {display:flex;align-items:center;gap:6px;font-size:13px;color:#1e3a8a}
+    .legend-dot {width:12px;height:12px;border-radius:50%}
+    .tabs {display:flex;gap:8px;margin-bottom:15px;flex-wrap:wrap;justify-content:center}
+    .tab {padding:6px 12px;border-radius:8px;background:white;border:1px solid #cbd5e1;cursor:pointer;font-weight:600;font-size:13px;color:#1e3a8a;transition:0.2s}
+    .tab.active {background:var(--brand2);color:white}
+    .card {background:var(--panel);border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 4px 10px rgba(59,130,246,.1);padding:20px;width:100%;}
+    .panel {background:white;border-radius:12px;border:1px solid #cbd5e1;box-shadow:0 3px 8px rgba(59,130,246,.08);padding:12px;margin-bottom:16px}
+    .panel h3 {margin:0 0 10px;font-size:15px;color:var(--brand2);font-weight:700;text-align:center}
+    .grid-2col {display:grid;grid-template-columns:repeat(2, 1fr);gap:20px;}
+    .matrix {display:grid;grid-template-columns:repeat(13,32px);gap:4px;user-select:none;margin-top:8px;justify-content:center}
+    .cell {width:32px;height:28px;border-radius:4px;border:1px solid #cbd5e1;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;cursor:pointer;background:white;transition:background 0.15s ease;}
+    footer {margin-top:20px;text-align:center;font-size:11px;color:#64748b}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="title">Tournoi 6-max – Ranges Préflop</div>
+      <div class="subtitle">Open / Call / 3bet / Fold – par position</div>
+      <div class="legend">
+        <div class="legend-item"><span class="legend-dot" style="background:#22c55e"></span> Early</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span> Mid</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#ef4444"></span> Late</div>
+      </div>
+    </header>
+
+    <div class="tabs" id="pos-tabs"></div>
+    <div class="card" id="ranges-container"></div>
+
+    <footer>🧩 Cliquer sur une case = changer la catégorie • s = suited • o = offsuit</footer>
+  </div>
+
+  <script>
+    const RANKS=["A","K","Q","J","T","9","8","7","6","5","4","3","2"];
+    const COLORS={early:"#22c55e",mid:"#f59e0b",late:"#ef4444",fold:"white"};
+    const CATS=["fold","early","mid","late"];
+    const POS=["UTG","HJ","CO","BTN","SB","BB"];
+    const SCENARIOS=["Open","Vs UTG Open","Vs HJ Open","Vs CO Open","Vs BTN Open","Vs SB Open"];
+    const STORAGE_KEY="ranges_tournoi6max_v5";
+
+    function cellKey(i,j){
+      const r1=RANKS[i],r2=RANKS[j];
+      if(i===j) return r1+r2; // Paires sur la diagonale
+      return i<j?r1+r2+'s':r2+r1+'o'; // Suited au-dessus, Offsuit en dessous
+    }
+
+    function makeEmpty(){let m={};POS.forEach(p=>{m[p]={};SCENARIOS.forEach(s=>m[p][s]={cells:{}})});return m;}
+    function save(){localStorage.setItem(STORAGE_KEY,JSON.stringify(model));}
+    function load(){try{const s=localStorage.getItem(STORAGE_KEY);return s?JSON.parse(s):null}catch(e){return null}}
+
+    let model = load() || makeEmpty();
+
+    function buildTabs(){
+      const tabBar=document.getElementById("pos-tabs");
+      POS.forEach((pos,i)=>{
+        const t=document.createElement("div");
+        t.className="tab"+(i===0?" active":"");
+        t.textContent=pos;
+        t.addEventListener("click",()=>switchTab(pos));
+        tabBar.appendChild(t);
+      });
+    }
+
+    function buildAll(){
+      const cont=document.getElementById("ranges-container");
+      POS.forEach(pos=>{
+        const section=document.createElement("div");
+        section.className="pos-section";
+        section.dataset.pos=pos;
+        if(pos!=='UTG') section.style.display='none';
+
+        const grid=document.createElement('div');
+        grid.className='grid-2col';
+
+        SCENARIOS.forEach(scn=>{
+          const panel=document.createElement("div");
+          panel.className="panel";
+          panel.innerHTML=`<h3>${pos} – ${scn}</h3><div class='matrix'></div>`;
+          buildMatrix(panel,pos,scn);
+          grid.appendChild(panel);
+        });
+
+        section.appendChild(grid);
+        cont.appendChild(section);
+      });
+    }
+
+    function switchTab(pos){
+      document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(t=>{if(t.textContent===pos)t.classList.add('active');});
+      document.querySelectorAll('.pos-section').forEach(s=>{s.style.display=s.dataset.pos===pos?'block':'none';});
+    }
+
+    function buildMatrix(panel,pos,scn){
+      const m=panel.querySelector('.matrix');
+      for(let i=0;i<RANKS.length;i++){
+        for(let j=0;j<RANKS.length;j++){
+          const key=cellKey(i,j);
+          const c=document.createElement('div');
+          c.className='cell';
+          c.textContent=key.replace('S','s').replace('O','o');
+          c.dataset.key=`${i}-${j}`;
+          c.addEventListener('click',()=>toggle(pos,scn,`${i}-${j}`,c));
+          m.append(c);
+        }
+      }
+      refresh(pos,scn);
+    }
+
+    function paint(c,cat){c.style.background=COLORS[cat];c.style.borderColor='#cbd5e1';c.style.color=cat==='fold'?'#0f172a':'white';}
+
+    function toggle(pos,scn,key,c){
+      const cur=model[pos][scn].cells[key]||'fold';
+      const next=CATS[(CATS.indexOf(cur)+1)%CATS.length];
+      model[pos][scn].cells[key]=next;
+      paint(c,next);
+      save();
+    }
+
+    function refresh(pos,scn){
+      document.querySelectorAll(`[data-pos='${pos}'] .panel`).forEach(p=>{
+        if(!p.querySelector('h3').textContent.includes(scn)) return;
+        p.querySelectorAll('.cell').forEach(c=>{
+          const cat=model[pos][scn].cells[c.dataset.key]||'fold';
+          paint(c,cat);
+        });
+      });
+    }
+
+    buildTabs();
+    buildAll();
+    POS.forEach(pos=>{SCENARIOS.forEach(scn=>refresh(pos,scn));});
+  </script>
+</body>
+</html>
